@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <title>Sky Fall</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <link rel=stylesheet href="css/base.css"/>
+    <link href='http://fonts.googleapis.com/css?family=Roboto:900' rel='stylesheet' type='text/css'>
+
+</head>
+<body>
+
+<script src="http://d309knd7es5f10.cloudfront.net/zim_1.3.js"></script>
+<script src="http://cdnjs.cloudflare.com/ajax/libs/three.js/r69/three.min.js"></script>
+<script src="http://code.createjs.com/createjs-2014.12.12.min.js"></script>
+<script src="js/Detector.js"></script>
+<script src="js/OrbitControls.js"></script>
+<script src="js/KeyboardState.js"></script>
+<script src="js/THREEx.FullScreen.js"></script>
+<script src="js/THREEx.WindowResize.js"></script>
+<script src="js/Stats.js"></script>
+
+<div id="ThreeJS" style="position: absolute; left:0px; top:0px">
+
+	<div id="what">
+		<h1 id="text"></h1>
+		<a href="skyfall.html" id="restart"></a>
+	</div>
+
+	<div id="fallstats">
+		<h2 id="height"></h2>
+		<h2 id="speed"></h2>
+		<h2 id="message"></h2>
+	</div>
+
+</div>
+
+<style>
+
+#what {
+	background-color: #262626;
+	height: 100vh; 
+	width: 100%;
+	z-index: 900;
+	position: absolute;
+	opacity: 0;
+	transition:all 1s ease;
+}
+
+#text {
+	font-size: 72px;
+	color: white;
+	font-family: 'Roboto', sans-serif;
+	text-align: center;
+	transition:all 1s ease;
+	margin-top: 40vh;
+
+}
+
+#fallstats {
+	background-color: #9BCE7D;
+	position: absolute;
+	padding:2%;
+	padding-left: 5%;
+	padding-right: 5%;
+	border-radius: 5px;
+	transition:all 1s ease;
+	width: 10%;
+	text-align: center;
+}
+
+h2 {
+	font-family: 'Roboto', sans-serif;
+	color: white;
+	font-size: 24px;
+}
+
+a {
+	font-family: 'Roboto', sans-serif;
+	color: white;
+	font-size: 24px;
+	text-align: center;
+	transition:all 1s ease;
+	display: block;
+	margin: 0 auto;
+	text-decoration: none;
+
+}
+
+</style>
+
+<script id="vertexShader" type="x-shader/x-vertex">
+
+varying vec2 vUv;
+void main() 
+{ 
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+}
+</script>
+
+<script id="fragmentShader" type="x-shader/x-vertex"> 
+uniform sampler2D baseTexture;
+uniform float baseSpeed;
+uniform sampler2D noiseTexture;
+uniform float noiseScale;
+uniform float alpha;
+uniform float time;
+
+varying vec2 vUv;
+void main() 
+{
+	vec2 uvTimeShift = vUv + vec2( -0.7, 1.5 ) * time * baseSpeed;	
+	vec4 noiseGeneratorTimeShift = texture2D( noiseTexture, uvTimeShift );
+	vec2 uvNoiseTimeShift = vUv + noiseScale * vec2( noiseGeneratorTimeShift.r, noiseGeneratorTimeShift.b );
+	vec4 baseColor = texture2D( baseTexture, uvNoiseTimeShift );
+
+	baseColor.a = alpha;
+	gl_FragColor = baseColor;
+}  
+</script>
+
+<script>
+
+/*=====================================================================*/
+// stop stage from moving around with scrollwheel
+var b = function(e) {if (!e) e = event; e.preventDefault();}
+var c = b;
+window.addEventListener("mousewheel", b);
+window.addEventListener("DOMMouseScroll", c);
+
+var stageW = zim.windowWidth();
+var stageH = zim.windowHeight();
+window.addEventListener("resize", function(e) {
+	if (!e) e = event;
+	stageW = zim.windowWidth();
+	stageH = zim.windowHeight();
+});
+
+var mouseX=stageW/2; var mouseY=stageH/2;
+window.addEventListener("mousemove", function(e) {
+	if (!e) e = event;
+	mouseX = e.clientX;
+	mouseY = e.clientY;
+});
+
+var dampX = new zim.Damp();
+var dampZ = new zim.Damp();
+var dampY = new zim.Damp();
+var dampS = new zim.Damp(speed, .05);
+/*=====================================================================*/
+
+// MAIN
+
+// standard global variables
+var container, scene, camera, renderer, controls;
+var keyboard = new KeyboardState();
+var clock = new THREE.Clock();
+
+// custom global variables
+var mesh;
+var targets = [];
+var speed = .2;
+var dropVal = 20;
+var bg;
+var s = 400;
+
+init();
+animate();
+
+// FUNCTIONS 		
+function init() {
+	// SCENE
+	scene = new THREE.Scene();
+	
+	// CAMERA
+	var SCREEN_WIDTH = window.innerWidth, SCREEN_HEIGHT = window.innerHeight;
+	var VIEW_ANGLE = 70, ASPECT = SCREEN_WIDTH / SCREEN_HEIGHT, NEAR = 0.1, FAR = 200000;
+	camera = new THREE.PerspectiveCamera(VIEW_ANGLE, ASPECT, NEAR, FAR);
+	scene.add(camera);
+	camera.position.set(0, 0, 20000); //+num is backside, -num is front side
+	camera.lookAt(scene.position);	
+	
+	// RENDERER
+	if (Detector.webgl)
+		renderer = new THREE.WebGLRenderer({antialias:true});
+	else
+		renderer = new THREE.CanvasRenderer(); 
+	renderer.setSize(SCREEN_WIDTH, SCREEN_HEIGHT);
+	container = document.getElementById('ThreeJS');
+	container.appendChild(renderer.domElement);
+	
+	// EVENTS
+	THREEx.WindowResize(renderer, camera);
+	THREEx.FullScreen.bindKey({charCode : 'm'.charCodeAt(0)});
+	
+	// CONTROLS
+	controls = new THREE.OrbitControls(camera, renderer.domElement);
+	
+	// LIGHT
+	var light = new THREE.PointLight(0xffffff);
+	light.position.set(100, 250, 100);
+	scene.add(light);
+	
+	// FLOOR
+	var floorTexture = new THREE.ImageUtils.loadTexture('images/grassSmall.png');
+	floorTexture.wrapS = floorTexture.wrapT = THREE.RepeatWrapping; 
+	floorTexture.repeat.set(1000, 1000);
+	var floorMaterial = new THREE.MeshBasicMaterial({map: floorTexture, side: THREE.DoubleSide});
+	var floorGeometry = new THREE.PlaneGeometry(100000, 100000, 10, 10);
+	var floor = new THREE.Mesh(floorGeometry, floorMaterial);
+	floor.rotation.x = Math.PI;
+	scene.add(floor);
+	
+	var skyBoxGeometry = new THREE.CubeGeometry(100000, 100000, 100000);
+	var skyBoxMaterial = new THREE.MeshBasicMaterial({color:0x9999ff, side:THREE.BackSide});
+	var skyBox = new THREE.Mesh(skyBoxGeometry, skyBoxMaterial);
+	scene.add(skyBox);
+	
+	////////////
+	// CUSTOM //
+	////////////
+	
+	//////////TARGETS
+
+	var boundX = 1200;
+	var boundY = 1200;
+	var boundZ = 20000;
+	var boundMin = 100;
+	var target;
+	
+	var targetGeo = new THREE.BoxGeometry(s, s, 20);
+	var targetMat = new THREE.MeshBasicMaterial({color: 0xA0FB71, transparent: true, opacity: 0.7});
+	
+	for (var i = 0; i < 25; i++) {
+		target = new THREE.Mesh(targetGeo, targetMat);
+		target.position.set(
+			zim.rand(-boundX, boundX),
+			zim.rand(-boundY, boundY),
+			zim.rand(boundMin, boundZ)
+		);
+		targets.push(target);
+		target.hitCheck = false;
+		scene.add(target);
+	}
+
+	/////////CLOUDS
+	var cboundX = 3000;
+	var cboundY = 3000;
+	var cboundZ = 20000;
+	var cboundMin = 500;
+
+	var cloud;
+	var cloudTex = new THREE.ImageUtils.loadTexture('images/cloudOne.png');
+
+	var clouds = [];
+	var cloudMat = new THREE.MeshBasicMaterial({map: cloudTex, transparent: true, opacity: 0.5, color: 0xFFFFFF});
+	var cloudGeo = new THREE.PlaneGeometry(1000, 900);
+
+	for (var i = 0; i < 20; i++) {
+		cloud = new THREE.Mesh(cloudGeo, cloudMat);
+		cloud.position.set(
+			zim.rand(-cboundX, cboundX),
+			zim.rand(-cboundY, cboundY),
+			zim.rand(cboundMin, cboundZ)
+		);
+		scene.add(cloud);
+		clouds.push(cloud);
+	}
+}
+
+var interval = setInterval(function(){ 
+	dropVal += 15; 
+	//console.log("INCREASED!!!!!!!")
+}, 2000);
+
+function animate() {
+    requestAnimationFrame(animate);
+
+	camera.position.z -= dropVal; //camera coming towards you should be +z but because it's "backside", -z
+
+	var height = document.getElementById("height");
+	height.innerHTML = Math.round(camera.position.z) + " ft";
+
+	var speed = document.getElementById("speed");
+	speed.innerHTML = Math.round(dropVal)  + " km/h";
+
+	
+	var target;
+	for (var i = 0; i < targets.length; i++) {
+		target = targets[i]; //temp target variable
+		
+		if (camera.position.x >= target.position.x-s/2 && camera.position.x <= target.position.x+s/2 &&
+			camera.position.y >= target.position.y-s/2 && camera.position.y <= target.position.y+s/2 &&
+			camera.position.z >= target.position.z-s/2 && camera.position.z <= target.position.z+s/2) {
+			if (!target.hitCheck) {
+				target.hitCheck = true;
+				dropVal = dropVal/2;
+				//console.log("DECREASED!");
+
+			}
+		} else {
+			if (target.hitCheck) {
+				target.hitCheck = false;
+			}
+		}
+
+		if (dropVal > 30) { //change colours based on whether you are losing or not
+			var fallstats = document.getElementById("fallstats");
+			fallstats.style.backgroundColor="#dd2c2c";
+			target.material.color.setHex(0xD32127); //losing
+			
+		} else {
+			var fallstats = document.getElementById("fallstats");
+			fallstats.style.backgroundColor="#CCCCCC";
+			target.material.color.setHex(0xA0FB71); //winning
+			
+		}
+		
+		if (camera.position.z <= 20) {
+			gameOver();
+
+			var speed = document.getElementById("speed");
+			speed.innerHTML = 0 + " km/h";
+
+			var height = document.getElementById("height");
+			height.innerHTML = 0 + " ft";
+		}
+	}
+
+	controls.update();
+	renderer.render(scene,camera);
+}
+
+function gameOver() {
+	clearInterval(interval); //stops increasing speed
+	if (dropVal < 30) {
+		win();
+		dropVal = 0; //stops camera from moving
+	}
+	else if (dropVal > 30) {
+		lose();
+	}
+}
+
+function win() {
+	var bg = document.getElementById("what"); 
+	bg.style.opacity = "1";
+	bg.style.zIndex = "3";
+
+	var text = document.getElementById("text"); 
+	text.innerHTML = "YOU LIVE!";
+
+	var restart = document.getElementById("restart"); 
+	restart.innerHTML = "RESTART?";
+}
+
+function lose() {
+	var bg = document.getElementById("what"); 
+	bg.style.opacity = "1";
+	bg.style.backgroundColor = "#dd2c2c";
+	bg.style.zIndex = "1";
+
+	var text = document.getElementById("text"); 
+	text.innerHTML = "YOU DEAD!";
+	text.style.color="#262626";
+
+	var restart = document.getElementById("restart"); 
+	restart.innerHTML = "RESTART?";
+	restart.style.color="#262626";
+}
+
+</script>
+
+</body>
+</html>
